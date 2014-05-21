@@ -676,7 +676,18 @@ of12_translation_utils::of12_map_flow_entry_actions(
 					action = of1x_init_packet_action( OF1X_AT_SET_FIELD_UDP_SRC, field, 0x0);
 				}
 					break;
-
+				case rofl::openflow13::OFPXMT_OFB_SCTP_DST:
+				{
+					field.u16 = oxm.get_u16value();
+					action = of1x_init_packet_action( OF1X_AT_SET_FIELD_SCTP_DST, field, 0x0);
+				}
+					break;
+				case rofl::openflow13::OFPXMT_OFB_SCTP_SRC:
+				{
+					field.u16 = oxm.get_u16value();
+					action = of1x_init_packet_action( OF1X_AT_SET_FIELD_SCTP_SRC, field, 0x0);
+				}
+					break;
 				case rofl::openflow12::OFPXMT_OFB_IPV6_SRC: {
 					field.u128 = oxm.get_u128value().get_ipv6_addr();
 					action = of1x_init_packet_action(OF1X_AT_SET_FIELD_IPV6_SRC, field, 0x0);
@@ -757,6 +768,7 @@ of12_translation_utils::of12_map_flow_entry_actions(
 				ROFL_ERR("of1x_endpoint(%s)::of12_map_flow_entry() "
 						"unknown OXM class in action SET-FIELD found: %s",
 						sw->dpname.c_str(), sstr.str().c_str());
+				assert(0);
 			}
 				break;
 			}
