@@ -84,7 +84,7 @@ pkt_types_unrolled = [ ]
 
 #Unroll parameters 
 ipv4_max_options_words = 15 #15 Inclusive 15x4bytes=60bytes 
-mpls_max_depth=16 #Maximum
+mpls_max_depth=32 #Maximum
 vlan_max=2 #Maximum
 
 ##
@@ -529,7 +529,7 @@ def add_class_type_macro(f):
 	#Add main Macro
 	f.write("\n#define PT_CLASS_ADD_PROTO(state, PROTO_TYPE) do{\\\n")
 	f.write("\tpkt_types_t next_header = (pkt_types_t)parse_transitions[state->type][ __UNROLLED_PT_PROTO_##PROTO_TYPE ];\\\n")
-	f.write("\tif( unlikely(next_header == 0) ){ assert(0); return; }else{ state->type = next_header;  }\\\n")
+	f.write("\tif( unlikely(next_header == PT_INVALID) ){ assert(0); return; }else{ state->type = next_header;  }\\\n")
 	f.write("}while(0)\n")
 	
 	#Add IPv4 options macro
