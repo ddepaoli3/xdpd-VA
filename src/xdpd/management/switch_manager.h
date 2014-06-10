@@ -29,6 +29,8 @@
 #include <rofl/datapath/pipeline/openflow/of_switch.h>
 #include <rofl/datapath/pipeline/openflow/openflow1x/pipeline/of1x_flow_entry.h>
 
+#include <rofl/common/crofctl.h>
+
 /**
 * @file switch_manager.h
 * @author Marc Sune<marc.sune (at) bisdn.de>
@@ -88,6 +90,17 @@ public:
 					int reconnect_start_timeout,
 					enum rofl::csocket::socket_type_t socket_type,
 					rofl::cparams const& socket_params) throw (eOfSmExists, eOfSmErrorOnCreation, eOfSmVersionNotSupported);
+
+	/**
+	 * Create switch without controllers.
+	 * They must be added in a second moment
+	 * @author Daniel Depaoli <daniel.depaoli (at) create-net.org>
+	 */
+	static openflow_switch* create_switch_no_ctl(of_version_t version,
+					uint64_t dpid,
+					std::string const& dpname,
+					unsigned int num_of_tables,
+					int* ma_list) throw (eOfSmExists, eOfSmErrorOnCreation, eOfSmVersionNotSupported);
 
 
 	/**
@@ -158,7 +171,8 @@ public:
 	static rofl_result_t __notify_port_attached(const switch_port_snapshot_t* port_snapshot);	
 	static rofl_result_t __notify_port_status_changed(const switch_port_snapshot_t* port_snapshot);	
 	static rofl_result_t __notify_port_detached(const switch_port_snapshot_t* port_snapshot);	
-	static rofl_result_t __process_of1x_packet_in(uint64_t dpid,
+	static rofl_result_t __process_of1x_packet_in(
+					uint64_t dpid,
 					uint8_t table_id,
 					uint8_t reason,
 					uint32_t in_port,
@@ -166,10 +180,18 @@ public:
 					uint8_t* pkt_buffer,
 					uint32_t buf_len,
 					uint16_t total_len,
-					packet_matches_t* matches);
+					packet_matches_t* matches,
+					rofl::crofctl* controller);
+
 	static rofl_result_t __process_of1x_flow_removed(uint64_t dpid, 
 					uint8_t reason, 	
 					of1x_flow_entry_t* removed_flow_entry);
+
+	//Shall never be used except for the cmm
+	//TODO[va] move to private
+	static openflow_switch* __get_switch_by_dpid(uint64_t dpid);
+
+
 
 private:
 	
@@ -178,8 +200,7 @@ private:
 	static std::map<uint64_t, openflow_switch*> switchs; 
 	static uint64_t dpid_under_destruction;
 
-	//Shall never be used except for the cmm
-	static openflow_switch* __get_switch_by_dpid(uint64_t dpid);	
+
 
 	//Default addresses
 	static const rofl::caddress controller_addr;

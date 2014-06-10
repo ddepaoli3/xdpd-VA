@@ -5,6 +5,10 @@
 #include "of13_translation_utils.h"
 #include "../../management/system_manager.h"
 
+#include "../../virtualization-agent/virtualagent.h"
+#define eth_lldp 0x88CC
+#define eth_unknow 0x8942
+
 using namespace xdpd;
 
 /*
@@ -26,6 +30,13 @@ of13_endpoint::of13_endpoint(
 
 	//Connect to controller
 	crofbase::rpc_connect_to_ctl(versionbitmap, reconnect_start_timeout, socket_type, socket_params);
+}
+
+of13_endpoint::of13_endpoint(openflow_switch* sw)  throw (eOfSmErrorOnCreation) {
+
+	//Reference back to the sw
+	this->sw = sw;
+
 }
 
 /*
@@ -105,6 +116,7 @@ of13_endpoint::handle_packet_out(
 		rofl::openflow::cofmsg_packet_out& msg,
 		uint8_t aux_id)
 {
+	printf("Packet out\n");
 	of1x_action_group_t* action_group = of1x_init_action_group(NULL);
 
 	try{
@@ -112,6 +124,28 @@ of13_endpoint::handle_packet_out(
 	}catch(...){
 		of1x_destroy_action_group(action_group);
 		throw;
+	}
+
+	/**
+	 *
+	 */
+	of1x_action_group_t* new_action_group = new of1x_action_group_t;
+	ROFL_INFO("%i",new_action_group->num_of_actions);
+	if (virtual_agent::is_active())
+	{
+		cpacket packet = msg.get_packet();
+		// Case LLDP packet:
+		// lldp must be tagged with vlan and sends to only slice's ports
+		if ( !msg.get_packet().empty() && packet.get_match().get_eth_type()== eth_lldp )
+		{
+			new_action_group = virtual_agent::action_group_analysis(&ctl, action_group, sw, true);
+		}
+		else
+			new_action_group = virtual_agent::action_group_analysis(&ctl, action_group, sw);
+	}
+	else
+	{
+		new_action_group = action_group;
 	}
 
 	/* assumption: driver can handle all situations properly:
@@ -189,9 +223,42 @@ of13_endpoint::flow_mod_add(
 		throw eFlowModUnknown();//Just for safety, but shall never reach this
 	}
 
+	of1x_flow_entry_t *new_entry=NULL;
+	ROFL_INFO("%i\r",new_entry->cookie);
+
+	/**
+	 *
+	 * Virtualization case
+	 *
+	 */
+	if (virtual_agent::is_active())
+	{
+		try{
+			new_entry = virtual_agent::flow_entry_analysis(&ctl, entry, sw, OF_VERSION_10);
+		}
+		catch (eFlowModUnknown) {
+			printf("eFlowModUnknown in %s\n", __FUNCTION__);
+		}
+		catch(eFlowspaceMatch)
+		{
+			printf("Match error. Send error message to controller\n");
+		}
+		catch(...)
+		{
+			printf("Some errors in %s\n", __FUNCTION__);
+			ctl.send_error_message(msg.get_xid(), 4,4, msg.soframe(), msg.framelen());
+			//return;
+		}
+	}
+	else
+	{
+		new_entry = entry;
+	}
+
+
 	if (HAL_SUCCESS != (res = hal_driver_of1x_process_flow_mod_add(sw->dpid,
 								msg.get_table_id(),
-								&entry,
+								&new_entry,
 								msg.get_buffer_id(),
 								msg.get_flags() & openflow13::OFPFF_CHECK_OVERLAP,
 								msg.get_flags() & openflow13::OFPFF_RESET_COUNTS))){
@@ -236,6 +303,30 @@ of13_endpoint::flow_mod_modify(
 		throw eFlowModUnknown();//Just for safety, but shall never reach this
 	}
 
+	of1x_flow_entry_t *new_entry=NULL;
+	ROFL_INFO("%i\r",new_entry->cookie);
+
+	/**
+	 *
+	 * Virtualization case
+	 *
+	 */
+	if (virtual_agent::is_active())
+	{
+		try{
+			new_entry = virtual_agent::flow_entry_analysis(&ctl, entry, sw, OF_VERSION_10);
+		}
+		catch(...)
+		{
+			ctl.send_error_message(pack.get_xid(), 4,4, pack.soframe(), pack.framelen());
+			return;
+		}
+	}
+	else
+	{
+		new_entry = entry;
+	}
+
 
 	of1x_flow_removal_strictness_t strictness = (strict) ? STRICT : NOT_STRICT;
 
@@ -273,6 +364,31 @@ of13_endpoint::flow_mod_delete(
 
 	if(!entry)
 		throw eFlowModUnknown();//Just for safety, but shall never reach this
+
+
+	of1x_flow_entry_t *new_entry=NULL;
+	ROFL_INFO("%i\r",new_entry->cookie);
+
+	/**
+	 *
+	 * Virtualization case
+	 *
+	 */
+	if (virtual_agent::is_active())
+	{
+		try{
+			new_entry = virtual_agent::flow_entry_analysis(&ctl, entry, sw, OF_VERSION_10);
+		}
+		catch(...)
+		{
+			ctl.send_error_message(pack.get_xid(), 4,4, pack.soframe(), pack.framelen());
+			return;
+		}
+	}
+	else
+	{
+		new_entry = entry;
+	}
 
 
 	of1x_flow_removal_strictness_t strictness = (strict) ? STRICT : NOT_STRICT;
@@ -934,7 +1050,8 @@ of13_endpoint::process_packet_in(
 		uint8_t* pkt_buffer,
 		uint32_t buf_len,
 		uint16_t total_len,
-		packet_matches_t* matches)
+		packet_matches_t* matches,
+		rofl::crofctl* controller)
 {
 	try {
 		//Transform matches 
@@ -951,7 +1068,8 @@ of13_endpoint::process_packet_in(
 				/*cookie=*/0,
 				/*in_port=*/0, // OF1.0 only
 				match,
-				pkt_buffer, len);
+				pkt_buffer, len,
+				controller);
 
 		return ROFL_SUCCESS;
 
@@ -1213,20 +1331,38 @@ of13_endpoint::handle_group_mod(
 
 	rofl_of1x_gm_result_t ret_val;
  	of1x_bucket_list_t* bucket_list=of1x_init_bucket_list();
+
+ 	/**
+ 	 *
+ 	 * Virtualization case
+ 	 *
+ 	 */
+ 	uint32_t* new_group_id=NULL;
+ 	if (virtual_agent::is_active())
+ 	{
+ 		slice* slice = virtual_agent::list_switch_by_id[sw->dpid]->select_slice(&ctl);
+ 		new_group_id = virtual_agent::change_group_id(msg.get_group_id(), slice->slice_id);
+ 		if (new_group_id == NULL)
+ 			throw eGroupModInvalGroup();
+ 	}
 	
 	switch(msg.get_command()){
 		case openflow13::OFPGC_ADD:
 			of13_translation_utils::of13_map_bucket_list(&ctl, sw, msg.get_buckets(), bucket_list);
-			ret_val = hal_driver_of1x_group_mod_add(sw->dpid, (of1x_group_type_t)msg.get_group_type(), msg.get_group_id(), &bucket_list);
+			ret_val = hal_driver_of1x_group_mod_add(sw->dpid, (of1x_group_type_t)msg.get_group_type(),
+					(virtual_agent::is_active())?*new_group_id:msg.get_group_id(),
+							&bucket_list);
 			break;
 			
 		case openflow13::OFPGC_MODIFY:
 			of13_translation_utils::of13_map_bucket_list(&ctl, sw, msg.get_buckets(), bucket_list);
-			ret_val = hal_driver_of1x_group_mod_modify(sw->dpid, (of1x_group_type_t)msg.get_group_type(), msg.get_group_id(), &bucket_list);
+			ret_val = hal_driver_of1x_group_mod_modify(sw->dpid, (of1x_group_type_t)msg.get_group_type(),
+					(virtual_agent::is_active())?*new_group_id:msg.get_group_id(),
+							&bucket_list);
 			break;
 		
 		case openflow13::OFPGC_DELETE:
-			ret_val = hal_driver_of1x_group_mod_delete(sw->dpid, msg.get_group_id());
+			ret_val = hal_driver_of1x_group_mod_delete(sw->dpid, (virtual_agent::is_active())?*new_group_id:msg.get_group_id());
 			break;
 		
 		default:

@@ -100,7 +100,11 @@ bool va_switch::compare_match_flow(const packet_matches_t* pkt,
    		case FLOWSPACE_MATCH_ETH_TYPE: return __utern_compare16(it->value, &pkt->__eth_type);
 
 		//802.1q
-   		case FLOWSPACE_MATCH_VLAN_VID: return __utern_compare16(it->value, &pkt->__vlan_vid);
+   		case FLOWSPACE_MATCH_VLAN_VID:
+   			{
+   				//return __utern_compare16(it->value, (&pkt->__vlan_vid)>>8);
+   				return ((it->value->value.u16) == (pkt->__vlan_vid)>>8);
+   			}
    		case FLOWSPACE_MATCH_VLAN_PCP: return pkt->__has_vlan &&  __utern_compare8(it->value, &pkt->__vlan_pcp);
 
 		//MPLS

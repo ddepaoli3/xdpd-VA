@@ -13,6 +13,11 @@ using namespace xdpd;
  */
 int main(int argc, char** argv){
 
+	ROFL_INFO("\n\n#################################################################\n");
+	ROFL_INFO("This version is compiled from a backup code and doesn't work.\nWorking on adapting code to xdpd master\n");
+	ROFL_INFO("#################################################################\n\n");
+//	exit(EXIT_FAILURE);
+
 	//Check for root privileges 
 	if(geteuid() != 0){
 		ROFL_ERR("ERROR: Root permissions are required to run %s\n",argv[0]);	

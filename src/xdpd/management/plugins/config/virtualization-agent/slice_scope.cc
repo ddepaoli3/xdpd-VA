@@ -137,7 +137,7 @@ void slice_scope::post_validate(libconfig::Setting& setting,
 						slice* slice_to_add = new slice(dp_name, switch_manager::get_switch_dpid(dp_name), slice_name, address, ports_list);
 						virtual_agent::add_slice(slice_to_add, true);
 
-						ROFL_INFO("\nNew slice added %s, %s:%i. ID=%i\n", slice_name.c_str(), slice_ip.c_str(), port, slice_to_add->slice_id);
+						ROFL_INFO("New slice added %s, %s:%i. ID=%i\n\n", slice_name.c_str(), slice_ip.c_str(), port, slice_to_add->slice_id);
 					}
 				}
 
@@ -159,7 +159,7 @@ ROFL_INFO("New root_datapath_scope\n");
 
 void root_datapath_scope::pre_validate(libconfig::Setting& setting,
 		bool dry_run) {
-
+	ROFL_DEBUG_VERBOSE("Prevalido slice scope\n");
 	if(setting.getLength() != 0)
 	{
 	 	for(int i = 0; i<setting.getLength(); ++i){

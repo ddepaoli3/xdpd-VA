@@ -12,6 +12,8 @@
 #include "plugin_manager.h"
 #include "plugins/pm_timestamp.h" //Regnerate on configure for version numbers
 
+#include "../virtualization-agent/virtualagent.h"
+
 
 using namespace xdpd;
 using namespace rofl;
@@ -123,6 +125,9 @@ void system_manager::init_command_line_options(){
 	//Version
 	env_parser->add_option(coption(true, NO_ARGUMENT, 'v', "version", "Retrieve xDPd version and exit", std::string("")));
 
+	//Virtualization Agent
+	env_parser->add_option(coption(true, NO_ARGUMENT, 'n', "no-virtualization", "Deactivate virtualization", std::string("") ));
+
 
 	//Add plugin options
 	std::vector<coption> plugin_options = plugin_manager::__get_plugin_options();
@@ -152,6 +157,15 @@ void system_manager::init(int argc, char** argv){
 	
 	//Parse arguments
 	env_parser->parse_args();
+
+	/**
+	 * Set virtualization active true/false
+	 * It's not possible changing this in runtime
+	 */
+	if (env_parser->is_arg_set("no-virtualization"))
+		virtual_agent::active_va(false);
+	else
+		virtual_agent::active_va(true);
 
 	//If -v is set, print version and return immediately. Note that this must be here after
 	//get_info 

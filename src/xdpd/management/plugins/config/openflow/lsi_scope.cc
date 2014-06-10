@@ -11,6 +11,8 @@
 #include "../config.h"
 #include "lsi_connections.h"
 
+#include "../../../../virtualization-agent/virtualagent.h"
+
 using namespace xdpd;
 using namespace rofl;
 
@@ -222,7 +224,16 @@ void lsi_scope::post_validate(libconfig::Setting& setting, bool dry_run){
 		openflow_switch* sw;
 
 		//Create switch with the initial connection (connection 0)
-		sw = switch_manager::create_switch(version, dpid, name, num_of_tables, ma_list, reconnect_time, conns[0].type, conns[0].params);
+		if (virtual_agent::is_active())
+		{
+			sw = switch_manager::create_switch_no_ctl(version, dpid, name, num_of_tables, ma_list);
+			va_switch* switch_to_add = new va_switch(name, dpid);
+			virtual_agent::add_switch(switch_to_add);
+		}
+		else
+		{
+			sw = switch_manager::create_switch(version, dpid, name, num_of_tables, ma_list, reconnect_time, conns[0].type, conns[0].params);
+		}
 
 
 		if(!sw){
@@ -234,7 +245,6 @@ void lsi_scope::post_validate(libconfig::Setting& setting, bool dry_run){
 		std::vector<std::string>::iterator port_it;
 		unsigned int i;
 		for(port_it = ports.begin(), i=1; port_it != ports.end(); ++port_it, ++i){
-				
 			//Ignore empty ports	
 			if(*port_it == "")
 				continue;
@@ -252,7 +262,10 @@ void lsi_scope::post_validate(libconfig::Setting& setting, bool dry_run){
 	
 		//Connect(1..N-1)
 		for(std::vector<lsi_connection>::iterator it = (conns.begin()+1); it != conns.end(); ++it) {
-			switch_manager::rpc_connect_to_ctl(dpid, it->type, it->params); 
+			if (!virtual_agent::is_active())
+			{
+				switch_manager::rpc_connect_to_ctl(dpid, it->type, it->params);
+			}
 		}	
 	}
 }

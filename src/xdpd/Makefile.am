@@ -4,7 +4,7 @@ MAINTAINERCLEANFILES = Makefile.in
 FM_LIB= drivers/$(PLATFORM)/libxdpd_driver_$(PLATFORM).la
 FM_LIB_a= drivers/$(PLATFORM)/.libs/libxdpd_driver_$(PLATFORM).a
 
-SUBDIRS = management openflow drivers
+SUBDIRS = management openflow drivers virtualization-agent
 
 #Wrap
 noinst_LTLIBRARIES = libxdpd_wrap.la
@@ -23,6 +23,7 @@ xdpd_LDADD = \
 	$(LIBS)\
 	openflow/libxdpd_openflow.la\
 	-lrofl_pipeline \
+	virtualization-agent/libvirtualization_agent.la \
 	$(FM_LIB)\
 	-lpthread \
 	-lrofl \

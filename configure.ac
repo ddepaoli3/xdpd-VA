@@ -80,6 +80,7 @@ AC_CONFIG_FILES([
 	src/xdpd/openflow/openflow10/Makefile
 	src/xdpd/openflow/openflow12/Makefile
 	src/xdpd/openflow/openflow13/Makefile
+	src/xdpd/virtualization-agent/Makefile
 	test/Makefile
 ])
 

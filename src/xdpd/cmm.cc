@@ -8,6 +8,9 @@
 #include "management/port_manager.h"
 #include "management/plugin_manager.h"
 
+#include "virtualization-agent/va_switch.h"
+#include "virtualization-agent/virtualagent.h"
+
 using namespace xdpd;
 
 /*
@@ -113,10 +116,69 @@ hal_result_t hal_cmm_process_of1x_packet_in(uint64_t dpid,
 					uint32_t buf_len,
 					uint16_t total_len,
 					packet_matches_t* matches){
-	
-	//Note that this typecast is valid because hal_result_t and rofl_result_t have intentionally and explicitely the same definition
-	return (hal_result_t)switch_manager::__process_of1x_packet_in(dpid, table_id, reason, in_port, buffer_id, pkt_buffer, buf_len, total_len, matches);	
-}
+//	printf("[%s]tipo 0x%x da %" PRIx64 "\n",switch_manager::__get_switch_by_dpid(dpid)->dpname.c_str(),matches->__eth_type, matches->__eth_src);
+	if (virtual_agent::is_active())
+	{
+		va_switch* vaswitch = virtual_agent::list_switch_by_id[dpid];
+
+		std::list<flowspace_struct_t*>::iterator _flowspace; //declaration of single flowspace
+		std::list<flowspace_match_t*>::iterator _match;		// declaration of single match
+		flowspace_struct_t* tempFlowspace;
+		slice* slice = NULL;
+
+		bool matched = false;
+
+		/**
+		 * iterate through the flowspaces of the switch
+		 */
+		for (_flowspace = vaswitch->flowspace_struct_list.begin();
+				_flowspace != vaswitch->flowspace_struct_list.end();
+				_flowspace++)
+		{
+			tempFlowspace = *_flowspace;
+			if ( vaswitch->check_match(*matches,tempFlowspace->match_list) )
+			{
+				matched = true;
+				slice = vaswitch->get_slice(tempFlowspace->slice);
+				break;
+			}
+		}
+
+		crofctl* controller = NULL;
+
+		if (matched)
+		{
+			printf("[pack in][%s]Vlan=%i. Slice=%s.",
+					switch_manager::__get_switch_by_dpid(dpid)->dpname.c_str(),
+					(matches->__has_vlan)?matches->__vlan_vid:0,
+					slice->name.c_str());
+			controller = virtual_agent::list_switch_by_id[dpid]->controller_map[slice->name];
+		}
+
+		if (controller != NULL)
+		{
+			hal_result_t result = (hal_result_t)switch_manager::__process_of1x_packet_in(dpid, table_id, reason, in_port, buffer_id, pkt_buffer, buf_len, total_len, matches, controller);
+			printf("Invio: %s\n", (result)?"ok":"errore");
+			return result;
+		}
+			else
+		{
+			/**
+			 * if no controller was found
+			 * return success to not stop.
+			 * Packet in is not send.
+			 */
+			ROFL_ERR("Controller not found. Ignore the packet\n");
+			return HAL_SUCCESS;
+		}
+
+	}
+	else
+	{
+		//Note that this typecast is valid because hal_result_t and rofl_result_t have intentionally and explicitely the same definition
+		return (hal_result_t)switch_manager::__process_of1x_packet_in(dpid, table_id, reason, in_port, buffer_id, pkt_buffer, buf_len, total_len, matches, NULL);
+	}
+	}
 
 hal_result_t hal_cmm_process_of1x_flow_removed(uint64_t dpid, uint8_t reason, of1x_flow_entry_t* removed_flow_entry){
 	//Note that this typecast is valid because hal_result_t and rofl_result_t have intentionally and explicitely the same definition

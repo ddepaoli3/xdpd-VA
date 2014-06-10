@@ -37,6 +37,28 @@ openflow10_switch::openflow10_switch(uint64_t dpid,
 	endpoint = new of10_endpoint(this, reconnect_start_timeout, socket_type, socket_params);
 }
 
+/*
+* Constructor and destructor for the openflow 1.0 switch
+*/
+openflow10_switch::openflow10_switch(uint64_t dpid,
+				std::string const& dpname,
+				unsigned int num_of_tables,
+				int* ma_list) throw (eOfSmVersionNotSupported)
+		: openflow_switch(dpid, dpname, OF_VERSION_10, num_of_tables)
+{
+
+	if (hal_driver_create_switch((char*)dpname.c_str(),
+					     dpid, OF_VERSION_10, num_of_tables, ma_list) != HAL_SUCCESS){
+		//WRITELOG(CDATAPATH, ERROR, "of10_endpoint::of10_endpoint() "
+		//		"failed to allocate switch instance in HAL, aborting");
+
+		throw eOfSmErrorOnCreation();
+	}
+
+	//Initialize the endpoint, and launch control channel
+	endpoint = new of10_endpoint(this);
+}
+
 
 openflow10_switch::~openflow10_switch(){
 
@@ -58,7 +80,8 @@ rofl_result_t openflow10_switch::process_packet_in(uint8_t table_id,
 					uint8_t* pkt_buffer,
 					uint32_t buf_len,
 					uint16_t total_len,
-					packet_matches_t* matches){
+					packet_matches_t* matches,
+					rofl::crofctl* controller){
 
 	return ((of10_endpoint*)endpoint)->process_packet_in(table_id,
 					reason,
@@ -67,7 +90,8 @@ rofl_result_t openflow10_switch::process_packet_in(uint8_t table_id,
 					pkt_buffer,
 					buf_len,
 					total_len,
-					matches);
+					matches,
+					controller);
 }
 
 rofl_result_t openflow10_switch::process_flow_removed(uint8_t reason, of1x_flow_entry_t* removed_flow_entry){

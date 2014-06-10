@@ -409,13 +409,14 @@ of1x_action_group_t* virtual_agent::action_group_analysis(crofctl* ctl,
 			case OF1X_PORT_ANY:
 					break;
 			default:
+				//if (lldp)
+				//	printf("lldp: 0x%" PRIx64 "\n", iter->__field.u64);
 				uint16_t porta = iter->__field.u64;
 				slice* slice = virtual_agent::list_switch_by_id[sw->dpid]->select_slice(ctl);
 				if (!slice->has_port(sw->num_to_port(porta)))
 				{
 					add_action = false;
 				}
-
 				break;
 			}
 
@@ -423,7 +424,7 @@ of1x_action_group_t* virtual_agent::action_group_analysis(crofctl* ctl,
 		if (add_action)
 			of1x_push_packet_action_to_group(new_action_group, iter);
 
-	}
+	}// end for cycle actions
 
 	/**
 	 *
@@ -456,13 +457,20 @@ of1x_action_group_t* virtual_agent::action_group_analysis(crofctl* ctl,
 
 			if (vlanID != 0)
 			{
+				//ROFL_INFO("%s from %s\n", __FUNCTION__, __FILE__);
 				wrap_uint_t field2;
 				memset(&field2,0,sizeof(wrap_uint_t));
-				field2.u64 = be16toh(vlanID);
-				of1x_packet_action_t *action2 = of1x_init_packet_action( OF1X_AT_SET_FIELD_VLAN_VID, field2, 0x0);;
-				action2->type = OF1X_AT_SET_FIELD_VLAN_VID;
-				action2->__field.u16 = vlanID;
+				field2.u16 = 0x88CC;//NTOHB16(vlanID);
+				//field.u16 = NTOHB16(raction.oac_10vlanvid->vlan_vid);
+				of1x_packet_action_t *action2 = of1x_init_packet_action( OF1X_AT_PUSH_VLAN, field2, 0x0);
+				//OF1X_AT_PUSH_VLAN; OF1X_AT_SET_FIELD_VLAN_VID
 				of1x_push_packet_action_to_group(new_action_group, action2);
+
+				wrap_uint_t field3;
+				memset(&field3,0,sizeof(wrap_uint_t));
+				field3.u16 = vlanID;//NTOHB16(vlanID);
+				of1x_packet_action_t *action3 = of1x_init_packet_action( OF1X_AT_SET_FIELD_VLAN_VID, field3, 0x0);
+				of1x_push_packet_action_to_group(new_action_group, action3);
 			}
 
 	}
@@ -481,7 +489,7 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 	 */
 	vector<bool> *match_vector = new vector<bool>(FLOWSPACE_MATCH_MAX, false);
 
-	of1x_flow_entry_t* new_entry = NULL;//of1x_init_flow_entry(NULL, NULL, entry->notify_removal);
+	of1x_flow_entry_t* new_entry = of1x_init_flow_entry(entry->notify_removal);//NULL
 
 	new_entry->priority 		= entry->priority;
 	new_entry->cookie 			= entry->cookie;
@@ -494,28 +502,27 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 	 * First step: add flowspace match
 	 */
 	if (add_flowspace_match(entry,new_entry, sw, of_version, slice, match_vector) != ROFL_SUCCESS)
-		throw eFlowModUnknown(); //eFspNoMatch();
+		throw eFlowspaceMatch();
 
 	/**
 	 *
 	 * Second step: add flow_mod Match and check if it correct
 	 */
 	if (add_flow_mod_match(entry,new_entry,sw,of_version,match_vector) != ROFL_SUCCESS)
-		throw eFlowModUnknown();
+		throw eVirtualAgentGeneric();
 
 	// Instructions
 	// For OF specification only ONE instruction per type
 	for (int i = 0; i <= OF1X_IT_MAX; i++)
 	{
 		switch (i){
-		case (OF1X_IT_NO_INSTRUCTION-1):
+		case (OF1X_IT_NO_INSTRUCTION):
 			break;
-		case (OF1X_IT_APPLY_ACTIONS-1):
-			if (entry->inst_grp.instructions[OF1X_IT_APPLY_ACTIONS-1].apply_actions)
+		case (OF1X_IT_APPLY_ACTIONS):
+			if (entry->inst_grp.instructions[OF1X_IT_APPLY_ACTIONS].apply_actions)
 			{
-				ROFL_INFO("apply actions\n");
 				of1x_action_group_t *new_action_group = of1x_init_action_group(0);
-				new_action_group = virtual_agent::action_group_analysis(ctl, entry->inst_grp.instructions[OF1X_IT_APPLY_ACTIONS-1].apply_actions, sw);
+				new_action_group = virtual_agent::action_group_analysis(ctl, entry->inst_grp.instructions[OF1X_IT_APPLY_ACTIONS].apply_actions, sw);
 				of1x_add_instruction_to_group(
 						&(new_entry->inst_grp),
 						OF1X_IT_APPLY_ACTIONS,
@@ -525,8 +532,8 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 						0);
 			}
 			break;
-		case (OF1X_IT_CLEAR_ACTIONS-1):
-			if (entry->inst_grp.instructions[OF1X_IT_CLEAR_ACTIONS-1].type == OF1X_IT_CLEAR_ACTIONS)
+		case (OF1X_IT_CLEAR_ACTIONS):
+			if (entry->inst_grp.instructions[OF1X_IT_CLEAR_ACTIONS].type == OF1X_IT_CLEAR_ACTIONS)
 			{
 				ROFL_INFO("clear actions\n");
 				of1x_add_instruction_to_group(
@@ -539,12 +546,12 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 			}
 
 			break;
-		case (OF1X_IT_WRITE_ACTIONS-1):
-			if (entry->inst_grp.instructions[OF1X_IT_WRITE_ACTIONS-1].write_actions)
+		case (OF1X_IT_WRITE_ACTIONS):
+			if (entry->inst_grp.instructions[OF1X_IT_WRITE_ACTIONS].write_actions)
 			{
 				ROFL_INFO("write actions\n");
 				of1x_write_actions_t* new_write_actions = of1x_init_write_actions();
-				new_write_actions = virtual_agent::write_actions_analysis(ctl,entry->inst_grp.instructions[OF1X_IT_WRITE_ACTIONS-1].write_actions,sw);
+				new_write_actions = virtual_agent::write_actions_analysis(ctl,entry->inst_grp.instructions[OF1X_IT_WRITE_ACTIONS].write_actions,sw);
 
 				of1x_add_instruction_to_group(
 					&(new_entry->inst_grp),
@@ -555,12 +562,12 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 					0);
 			}
 			break;
-		case (OF1X_IT_WRITE_METADATA-1):
+		case (OF1X_IT_WRITE_METADATA):
 			/////
 			//TODO:[VA]metadata analysis
 			//metadata check
 			/////
-			if (entry->inst_grp.instructions[OF1X_IT_WRITE_METADATA-1].type == OF1X_IT_WRITE_METADATA)
+			if (entry->inst_grp.instructions[OF1X_IT_WRITE_METADATA].type == OF1X_IT_WRITE_METADATA)
 			{
 				ROFL_INFO("metadata actions\n");
 			of1x_add_instruction_to_group(
@@ -568,12 +575,12 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 					OF1X_IT_WRITE_METADATA,
 					NULL,
 					NULL,
-					&(entry->inst_grp.instructions[OF1X_IT_WRITE_METADATA-1].write_metadata),
+					&(entry->inst_grp.instructions[OF1X_IT_WRITE_METADATA].write_metadata),
 					0);
 			}
 			break;
-		case (OF1X_IT_EXPERIMENTER-1):
-			if (entry->inst_grp.instructions[OF1X_IT_EXPERIMENTER-1].type == OF1X_IT_EXPERIMENTER)
+		case (OF1X_IT_EXPERIMENTER):
+			if (entry->inst_grp.instructions[OF1X_IT_EXPERIMENTER].type == OF1X_IT_EXPERIMENTER)
 			{
 			ROFL_INFO("experimenter actions\n");
 			of1x_add_instruction_to_group(
@@ -585,8 +592,8 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 					0);
 			}
 			break;
-		case (OF1X_IT_GOTO_TABLE-1):
-			if (entry->inst_grp.instructions[OF1X_IT_GOTO_TABLE-1].go_to_table)
+		case (OF1X_IT_GOTO_TABLE):
+			if (entry->inst_grp.instructions[OF1X_IT_GOTO_TABLE].go_to_table)
 			{
 				ROFL_INFO("goto actions\n");
 			of1x_add_instruction_to_group(
@@ -595,7 +602,7 @@ of1x_flow_entry_t* virtual_agent::flow_entry_analysis(crofctl* ctl,
 					NULL,
 					NULL,
 					NULL,
-					entry->inst_grp.instructions[OF1X_IT_GOTO_TABLE-1].go_to_table);
+					entry->inst_grp.instructions[OF1X_IT_GOTO_TABLE].go_to_table);
 			}
 			break;
 		}
@@ -633,21 +640,24 @@ rofl_result_t virtual_agent::add_flowspace_match(of1x_flow_entry_t* entry, of1x_
 //												ofmatch.get_vlan_vid_mask(),
 //												vlan_present);
 							match = of1x_init_vlan_vid_match(
-												(of_version == OF_VERSION_10)?
-														flowspaceMatch->value->value.u16|OF1X_VLAN_PRESENT_MASK:
+												//(of_version == OF_VERSION_10)?
+												//		flowspaceMatch->value->value.u16|OF1X_VLAN_PRESENT_MASK:
 														flowspaceMatch->value->value.u16,
 												(of_version == OF_VERSION_10)?
 														0x1FFF:~0,
-														OF1X_MATCH_VLAN_SPECIFIC);
+												OF1X_MATCH_VLAN_SPECIFIC);
 
 							temp_match = check_match_existance(flowspaceMatch->type,entry);
 							uint16_t vlan;
 
 							if (temp_match !=NULL ) // Flow_mod has vlan tag
 							{
-								vlan = (of_version==OF_VERSION_10)?temp_match->__tern->value.u16^OF1X_VLAN_PRESENT_MASK:temp_match->__tern->value.u16;
+								//printf("Vlan presente con valore %i\n", NTOHB16(temp_match->__tern->value.u16));
+								//vlan = (of_version==OF_VERSION_10)?temp_match->__tern->value.u16^OF1X_VLAN_PRESENT_MASK:temp_match->__tern->value.u16;
+								vlan = NTOHB16(temp_match->__tern->value.u16);
 								if (vlan != flowspaceMatch->value->value.u16) // flow_mod_vlan different flowspace_vlan
 								{
+									throw eFlowspaceMatch();
 									return ROFL_FAILURE;
 								}
 
@@ -946,3 +956,41 @@ of1x_write_actions_t* virtual_agent::write_actions_analysis(crofctl* ctl,
 	return new_write_actions;
 }
 
+void virtual_agent::print_debug(uint64_t dpid) {
+
+	if (!switch_manager::exists(dpid))
+		return;
+
+	//debug slice
+	for (list<slice*>::iterator it = virtual_agent::list_switch_by_id[dpid]->slice_list.begin();
+			it != virtual_agent::list_switch_by_id[dpid]->slice_list.end();
+			it++)
+	{
+		slice* _slice = *it;
+		ROFL_INFO("[debug] Slice: %s in datapath 0x%llx\n", _slice->name.c_str(),(long long unsigned)dpid);
+	}
+
+	//debug flowspace
+	for (std::list<flowspace_struct_t*>::iterator it = virtual_agent::list_switch_by_id[dpid]->flowspace_struct_list.begin();
+			it != virtual_agent::list_switch_by_id[dpid]->flowspace_struct_list.end();
+			it++)
+	{
+		flowspace_struct_t* _fs = *it;
+		ROFL_INFO("[debug] Flowspace %s. Owner: %s.", _fs->name.c_str(), _fs->slice.c_str());
+		std::stringstream rules;
+		rules << "Rules: ";
+		for (std::list<flowspace_match_t*>::iterator match_it = _fs->match_list.begin();
+				match_it != _fs->match_list.end();
+				match_it++)
+		{
+			flowspace_match_t* _match = *match_it;
+			rules << "MatchType ";
+			rules << _match->type;
+			rules << " Value ";
+			rules << _match->value->value.u16;
+			rules << ".  ";
+		}
+		std::cout << rules.str() << "\n";
+
+	}
+}

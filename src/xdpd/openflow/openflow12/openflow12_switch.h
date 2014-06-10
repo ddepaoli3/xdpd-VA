@@ -50,6 +50,14 @@ public:
 				enum rofl::csocket::socket_type_t socket_type,
 				cparams const& socket_params) throw (eOfSmVersionNotSupported);
 
+	/**
+	 * Constructor
+	 */
+	openflow12_switch(uint64_t dpid,
+				std::string const& dpname,
+				unsigned int num_of_tables,
+				int* ma_list) throw (eOfSmVersionNotSupported);
+
 
 	/**
 	 * Destructor
@@ -67,7 +75,8 @@ public:
 					uint8_t* pkt_buffer,
 					uint32_t buf_len,
 					uint16_t total_len,
-					packet_matches_t* matches);
+					packet_matches_t* matches,
+					rofl::crofctl* controller);
 	
 	virtual rofl_result_t process_flow_removed(uint8_t reason, of1x_flow_entry_t* removed_flow_entry);
 

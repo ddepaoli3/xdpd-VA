@@ -12,8 +12,15 @@
 #include "of10_translation_utils.h"
 #include "../../management/system_manager.h"
 
+#include "../../virtualization-agent/virtualagent.h"
+#include <rofl/common/openflow/cofmatch.h>
+#include <rofl/common/openflow/openflow_common.h>
+
 using namespace rofl;
 using namespace xdpd;
+
+#define eth_lldp 0x88CC
+#define eth_unknow 0x8942
 
 /*
 * Constructor and destructor
@@ -37,6 +44,21 @@ of10_endpoint::of10_endpoint(
 	crofbase::rpc_connect_to_ctl(versionbitmap, reconnect_start_timeout, socket_type, socket_params);
 }
 
+of10_endpoint::of10_endpoint(
+		openflow_switch* sw) throw (eOfSmErrorOnCreation) {
+
+
+	//Reference back to the sw
+	this->sw = sw;
+
+	//Set bitmaps
+	//crofbase::get_versionbitmap().add_ofp_version(rofl::openflow10::OFP_VERSION);
+	//rofl::openflow::cofhello_elem_versionbitmap versionbitmap;
+	//versionbitmap.add_ofp_version(rofl::openflow10::OFP_VERSION);
+
+	//Connect to the main controller
+	//crofbase::rpc_connect_to_ctl(versionbitmap, reconnect_start_timeout, socket_type, socket_params);
+}
 
 /*
 *
@@ -70,6 +92,52 @@ of10_endpoint::handle_features_request(
 	// array of structures ofp_port
 	rofl::openflow::cofports ports(ctl.get_version());
 
+	if (virtual_agent::is_active())
+	{
+		slice* slice = virtual_agent::list_switch_by_id[sw->dpid]->select_slice(&ctl);
+
+		for (unsigned int n = 1; n < of10switch->max_ports; n++){
+
+			ls_port = &of10switch->logical_ports[n];
+			_port = ls_port->port;
+
+			if(_port!=NULL && ls_port->attachment_state!=LOGICAL_PORT_STATE_DETACHED
+					&& slice->has_port(_port->name)){
+
+				//Mapping of port state
+				assert(n == _port->of_port_num);
+
+				rofl::openflow::cofport port(ctl.get_version());
+
+				port.set_port_no(_port->of_port_num);
+				port.set_hwaddr(cmacaddr(_port->hwaddr, OFP_ETH_ALEN));
+				port.set_name(std::string(_port->name));
+
+				uint32_t config = 0;
+				if(!_port->up)
+					config |= rofl::openflow10::OFPPC_PORT_DOWN;
+				if(_port->drop_received)
+					config |= rofl::openflow10::OFPPC_NO_RECV;
+				if(_port->no_flood)
+					config |= rofl::openflow10::OFPPC_NO_FLOOD;
+				if(!_port->forward_packets)
+					config |= rofl::openflow10::OFPPC_NO_FWD;
+				if(!_port->of_generate_packet_in)
+					config |= rofl::openflow10::OFPPC_NO_PACKET_IN;
+
+				port.set_config(config);
+				port.set_state(_port->state);
+				port.set_curr(_port->curr);
+				port.set_advertised(_port->advertised);
+				port.set_supported(_port->supported);
+				port.set_peer(_port->peer);
+
+				ports.add_port(_port->of_port_num) = port;
+			}
+	 	}
+	}
+	else
+	{
 	//we check all the positions in case there are empty slots
 	for (unsigned int n = 1; n < of10switch->max_ports; n++){
 
@@ -109,6 +177,7 @@ of10_endpoint::handle_features_request(
 			ports.add_port(_port->of_port_num) = port;
 		}
  	}
+	}
 
 	//Recover supported actions
 	supported_actions = of10_translation_utils::get_supported_actions(of10switch);
@@ -242,15 +311,51 @@ of10_endpoint::handle_port_stats_request(
 	/*
 	 *  send statistics for all ports
 	 */
-	if (rofl::openflow10::OFPP_ALL == port_no || rofl::openflow10::OFPP_NONE == port_no){
+	if (virtual_agent::is_active())
+	{
 
-		//we check all the positions in case there are empty slots
-		for (unsigned int n = 1; n < of10switch->max_ports; n++){
+		slice* slice = virtual_agent::list_switch_by_id[of10switch->dpid]->select_slice(&ctl);
+		if (rofl::openflow10::OFPP_ALL == port_no || rofl::openflow10::OFPP_NONE == port_no){
 
-			port = of10switch->logical_ports[n].port;
+			//we check all the positions in case there are empty slots
+			for (unsigned int n = 1; n < of10switch->max_ports; n++){
 
-			if((port != NULL) && (of10switch->logical_ports[n].attachment_state == LOGICAL_PORT_STATE_ATTACHED)){
+				port = of10switch->logical_ports[n].port;
 
+				if((port != NULL) && (of10switch->logical_ports[n].attachment_state == LOGICAL_PORT_STATE_ATTACHED)
+						&& slice->has_port(port->name)){
+
+					portstatsarray.set_port_stats(port->of_port_num).set_port_no(port->of_port_num);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_packets(port->stats.rx_packets);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_packets(port->stats.tx_packets);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_bytes(port->stats.rx_bytes);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_bytes(port->stats.tx_bytes);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_dropped(port->stats.rx_dropped);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_dropped(port->stats.tx_dropped);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_errors(port->stats.rx_errors);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_errors(port->stats.tx_errors);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_frame_err(port->stats.rx_frame_err);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_over_err(port->stats.rx_over_err);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_crc_err(port->stats.rx_crc_err);
+					portstatsarray.set_port_stats(port->of_port_num).set_collisions(port->stats.collisions);
+				}
+			}
+
+		}else if(port_no < of10switch->max_ports){
+			/*
+			 * send statistics for only one port
+			 */
+
+			// search for the port with the specified port-number
+			//we check all the positions in case there are empty slots
+			port = of10switch->logical_ports[port_no].port;
+			if( 	(port != NULL) &&
+				(of10switch->logical_ports[port_no].attachment_state == LOGICAL_PORT_STATE_ATTACHED) &&
+				(port->of_port_num == port_no)
+				&& slice->has_port(port->name)
+			){
+
+				//Mapping of port state
 				portstatsarray.set_port_stats(port->of_port_num).set_port_no(port->of_port_num);
 				portstatsarray.set_port_stats(port->of_port_num).set_rx_packets(port->stats.rx_packets);
 				portstatsarray.set_port_stats(port->of_port_num).set_tx_packets(port->stats.tx_packets);
@@ -265,41 +370,74 @@ of10_endpoint::handle_port_stats_request(
 				portstatsarray.set_port_stats(port->of_port_num).set_rx_crc_err(port->stats.rx_crc_err);
 				portstatsarray.set_port_stats(port->of_port_num).set_collisions(port->stats.collisions);
 			}
-	 	}
 
-	}else if(port_no < of10switch->max_ports){
-		/*
-		 * send statistics for only one port
-		 */
-
-		// search for the port with the specified port-number
-		//we check all the positions in case there are empty slots
-		port = of10switch->logical_ports[port_no].port;
-		if( 	(port != NULL) &&
-			(of10switch->logical_ports[port_no].attachment_state == LOGICAL_PORT_STATE_ATTACHED) &&
-			(port->of_port_num == port_no)
-		){
-
-			//Mapping of port state
-			portstatsarray.set_port_stats(port->of_port_num).set_port_no(port->of_port_num);
-			portstatsarray.set_port_stats(port->of_port_num).set_rx_packets(port->stats.rx_packets);
-			portstatsarray.set_port_stats(port->of_port_num).set_tx_packets(port->stats.tx_packets);
-			portstatsarray.set_port_stats(port->of_port_num).set_rx_bytes(port->stats.rx_bytes);
-			portstatsarray.set_port_stats(port->of_port_num).set_tx_bytes(port->stats.tx_bytes);
-			portstatsarray.set_port_stats(port->of_port_num).set_rx_dropped(port->stats.rx_dropped);
-			portstatsarray.set_port_stats(port->of_port_num).set_tx_dropped(port->stats.tx_dropped);
-			portstatsarray.set_port_stats(port->of_port_num).set_rx_errors(port->stats.rx_errors);
-			portstatsarray.set_port_stats(port->of_port_num).set_tx_errors(port->stats.tx_errors);
-			portstatsarray.set_port_stats(port->of_port_num).set_rx_frame_err(port->stats.rx_frame_err);
-			portstatsarray.set_port_stats(port->of_port_num).set_rx_over_err(port->stats.rx_over_err);
-			portstatsarray.set_port_stats(port->of_port_num).set_rx_crc_err(port->stats.rx_crc_err);
-			portstatsarray.set_port_stats(port->of_port_num).set_collisions(port->stats.collisions);
+			// if port_no was not found, body.memlen() is 0
+		}else{
+			//Unknown port
+			ROFL_ERR("Got a port stats request for an unknown port: %u. Ignoring...\n",port_no);
 		}
+	}
+	else
+	{
+		if (rofl::openflow10::OFPP_ALL == port_no || rofl::openflow10::OFPP_NONE == port_no){
 
-		// if port_no was not found, body.memlen() is 0
-	}else{
-		//Unknown port
-		ROFL_ERR("Got a port stats request for an unknown port: %u. Ignoring...\n",port_no);
+			//we check all the positions in case there are empty slots
+			for (unsigned int n = 1; n < of10switch->max_ports; n++){
+
+				port = of10switch->logical_ports[n].port;
+
+				if((port != NULL) && (of10switch->logical_ports[n].attachment_state == LOGICAL_PORT_STATE_ATTACHED)){
+
+					portstatsarray.set_port_stats(port->of_port_num).set_port_no(port->of_port_num);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_packets(port->stats.rx_packets);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_packets(port->stats.tx_packets);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_bytes(port->stats.rx_bytes);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_bytes(port->stats.tx_bytes);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_dropped(port->stats.rx_dropped);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_dropped(port->stats.tx_dropped);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_errors(port->stats.rx_errors);
+					portstatsarray.set_port_stats(port->of_port_num).set_tx_errors(port->stats.tx_errors);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_frame_err(port->stats.rx_frame_err);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_over_err(port->stats.rx_over_err);
+					portstatsarray.set_port_stats(port->of_port_num).set_rx_crc_err(port->stats.rx_crc_err);
+					portstatsarray.set_port_stats(port->of_port_num).set_collisions(port->stats.collisions);
+				}
+			}
+
+		}else if(port_no < of10switch->max_ports){
+			/*
+			 * send statistics for only one port
+			 */
+
+			// search for the port with the specified port-number
+			//we check all the positions in case there are empty slots
+			port = of10switch->logical_ports[port_no].port;
+			if( 	(port != NULL) &&
+				(of10switch->logical_ports[port_no].attachment_state == LOGICAL_PORT_STATE_ATTACHED) &&
+				(port->of_port_num == port_no)
+			){
+
+				//Mapping of port state
+				portstatsarray.set_port_stats(port->of_port_num).set_port_no(port->of_port_num);
+				portstatsarray.set_port_stats(port->of_port_num).set_rx_packets(port->stats.rx_packets);
+				portstatsarray.set_port_stats(port->of_port_num).set_tx_packets(port->stats.tx_packets);
+				portstatsarray.set_port_stats(port->of_port_num).set_rx_bytes(port->stats.rx_bytes);
+				portstatsarray.set_port_stats(port->of_port_num).set_tx_bytes(port->stats.tx_bytes);
+				portstatsarray.set_port_stats(port->of_port_num).set_rx_dropped(port->stats.rx_dropped);
+				portstatsarray.set_port_stats(port->of_port_num).set_tx_dropped(port->stats.tx_dropped);
+				portstatsarray.set_port_stats(port->of_port_num).set_rx_errors(port->stats.rx_errors);
+				portstatsarray.set_port_stats(port->of_port_num).set_tx_errors(port->stats.tx_errors);
+				portstatsarray.set_port_stats(port->of_port_num).set_rx_frame_err(port->stats.rx_frame_err);
+				portstatsarray.set_port_stats(port->of_port_num).set_rx_over_err(port->stats.rx_over_err);
+				portstatsarray.set_port_stats(port->of_port_num).set_rx_crc_err(port->stats.rx_crc_err);
+				portstatsarray.set_port_stats(port->of_port_num).set_collisions(port->stats.collisions);
+			}
+
+			// if port_no was not found, body.memlen() is 0
+		}else{
+			//Unknown port
+			ROFL_ERR("Got a port stats request for an unknown port: %u. Ignoring...\n",port_no);
+		}
 	}
 
 	//Destroy the snapshot
@@ -583,6 +721,7 @@ of10_endpoint::handle_packet_out(
 		rofl::openflow::cofmsg_packet_out& msg,
 		uint8_t aux_id)
 {
+	printf("Packet out\n");
 	of1x_action_group_t* action_group = of1x_init_action_group(NULL);
 
 	try{
@@ -592,15 +731,42 @@ of10_endpoint::handle_packet_out(
 		throw;
 	}
 
+	/**
+	 *
+	 */
+	of1x_action_group_t* new_action_group = new of1x_action_group_t;
+	ROFL_INFO("%i\r",new_action_group->num_of_actions);
+	if (virtual_agent::is_active())
+	{
+		cpacket packet = msg.get_packet();
+		// Case LLDP packet:
+		// lldp must be tagged with vlan and sends to only slice's ports
+		if ( !msg.get_packet().empty() && packet.get_match().get_eth_type()== eth_lldp )
+		{
+			new_action_group = virtual_agent::action_group_analysis(&ctl, action_group, sw, true);
+		}
+		else
+			new_action_group = virtual_agent::action_group_analysis(&ctl, action_group, sw);
+	}
+	else
+	{
+		new_action_group = action_group;
+	}
 	/* assumption: driver can handle all situations properly:
 	 * - data and datalen both 0 and buffer_id != rofl::openflow10::OFP_NO_BUFFER
 	 * - buffer_id == rofl::openflow10::OFP_NO_BUFFER and data and datalen both != 0
 	 * - everything else is an error?
 	 */
+//	printf("[%s]Num azioni=%i.\n",
+//			sw->dpname.c_str(),new_action_group->num_of_actions);
+//	of1x_packet_action_t* iter = action_group->head;
+//	for(iter=new_action_group->head;iter;iter = iter->next){
+//		printf("Action %i. ", iter->type);
+//	}
 	if (HAL_FAILURE == hal_driver_of1x_process_packet_out(sw->dpid,
 							msg.get_buffer_id(),
 							msg.get_in_port(),
-							action_group,
+							new_action_group,
 							msg.get_packet().soframe(), msg.get_packet().framelen())){
 		// log error
 		//FIXME: send error
@@ -624,7 +790,8 @@ of10_endpoint::process_packet_in(
 		uint8_t* pkt_buffer,
 		uint32_t buf_len,
 		uint16_t total_len,
-		packet_matches_t* matches)
+		packet_matches_t* matches,
+		rofl::crofctl* controller)
 {
 	try {
 		//Transform matches
@@ -641,7 +808,9 @@ of10_endpoint::process_packet_in(
 				/*cookie=*/0,
 				in_port, // OF1.0 only
 				match,
-				pkt_buffer, len);
+				pkt_buffer,
+				len,
+				controller);
 
 		return ROFL_SUCCESS;
 
@@ -772,9 +941,6 @@ rofl_result_t of10_endpoint::notify_port_status_changed(const switch_port_snapsh
 }
 
 
-
-
-
 void
 of10_endpoint::handle_barrier_request(
 		crofctl& ctl,
@@ -793,24 +959,30 @@ of10_endpoint::handle_flow_mod(
 		rofl::openflow::cofmsg_flow_mod& msg,
 		uint8_t aux_id)
 {
+
 	switch (msg.get_command()) {
 		case rofl::openflow10::OFPFC_ADD: {
+			printf("handle flow mod add\n");
 				flow_mod_add(ctl, msg);
 			} break;
 
 		case rofl::openflow10::OFPFC_MODIFY: {
+			printf("handle flow mod modify\n");
 				flow_mod_modify(ctl, msg, false);
 			} break;
 
 		case rofl::openflow10::OFPFC_MODIFY_STRICT: {
+			printf("handle flow mod modify strictly\n");
 				flow_mod_modify(ctl, msg, true);
 			} break;
 
 		case rofl::openflow10::OFPFC_DELETE: {
+			printf("handle flow mod delete\n");
 				flow_mod_delete(ctl, msg, false);
 			} break;
 
 		case rofl::openflow10::OFPFC_DELETE_STRICT: {
+			printf("handle flow mod delete strict\n");
 				flow_mod_delete(ctl, msg, true);
 			} break;
 
@@ -855,15 +1027,52 @@ of10_endpoint::flow_mod_add(
 		return;
 	}
 
+	of1x_flow_entry_t *new_entry=NULL;
+	/**
+	 *
+	 * Virtualization case
+	 *
+	 */
+	if (virtual_agent::is_active())
+	{
+		try{
+			new_entry = virtual_agent::flow_entry_analysis(&ctl, entry, sw, OF_VERSION_10);
+		}
+		catch (eFlowModUnknown) {
+			printf("eFlowModUnknown in %s\n", __FUNCTION__);
+		}
+		catch(eFlowspaceMatch)
+		{
+			printf("Match error. Send error message to controller\n");
+		}
+		catch(...)
+		{
+			printf("Some errors in %s\n", __FUNCTION__);
+			ctl.send_error_message(msg.get_xid(), 4,4, msg.soframe(), msg.framelen());
+			//return;
+		}
+	}
+	else
+	{
+		new_entry = entry;
+	}
+
+	if (!new_entry)
+	{
+		printf("Il virtual agent non ha funzionato\n");
+		return;
+	}
+
 	if (HAL_SUCCESS != (res = hal_driver_of1x_process_flow_mod_add(sw->dpid,
 								msg.get_table_id(),
-								&entry,
+								&new_entry,
 								msg.get_buffer_id(),
 								msg.get_flags() & rofl::openflow10::OFPFF_CHECK_OVERLAP,
 								false /*OFPFF_RESET_COUNTS is not defined for OpenFlow 1.0*/))){
 		// log error
 		ROFL_DEBUG("Error inserting the flowmod\n");
 		of1x_destroy_flow_entry(entry);
+		of1x_destroy_flow_entry(new_entry);
 
 		if(res == HAL_FM_OVERLAP_FAILURE)
 			throw eFlowModOverlap();
@@ -907,12 +1116,36 @@ of10_endpoint::flow_mod_modify(
 		return;
 	}
 
+	of1x_flow_entry_t *new_entry=NULL;
+	ROFL_INFO("%i\r",new_entry->cookie);
+
+	/**
+	 *
+	 * Virtualization case
+	 *
+	 */
+	if (virtual_agent::is_active())
+	{
+		try{
+			new_entry = virtual_agent::flow_entry_analysis(&ctl, entry, sw, OF_VERSION_10);
+		}
+		catch(...)
+		{
+			ctl.send_error_message(pack.get_xid(), 4,4, pack.soframe(), pack.framelen());
+			return;
+		}
+	}
+	else
+	{
+		new_entry = entry;
+	}
+
 	of1x_flow_removal_strictness_t strictness = (strict) ? STRICT : NOT_STRICT;
 
 
 	if(HAL_SUCCESS != hal_driver_of1x_process_flow_mod_modify(sw->dpid,
 								pack.get_table_id(),
-								&entry,
+								&new_entry,
 								pack.get_buffer_id(),
 								strictness,
 								false /*OFPFF_RESET_COUNTS is not defined for OpenFlow 1.0*/)){
@@ -947,12 +1180,35 @@ of10_endpoint::flow_mod_delete(
 		return;
 	}
 
+	of1x_flow_entry_t *new_entry=NULL;
+
+	/**
+	 *
+	 * Virtualization case
+	 *
+	 */
+//	if (virtual_agent::is_active())
+//	{
+//		try{
+//			new_entry = virtual_agent::flow_entry_analysis(&ctl, entry, sw, OF_VERSION_10);
+//		}
+//		catch(...)
+//		{
+//			ctl.send_error_message(pack.get_xid(), 4,4, pack.soframe(), pack.framelen());
+//			return;
+//		}
+//	}
+//	else
+//	{
+//		new_entry = entry;
+//	}
+	new_entry = entry;
 
 	of1x_flow_removal_strictness_t strictness = (strict) ? STRICT : NOT_STRICT;
 
 	if(HAL_SUCCESS != hal_driver_of1x_process_flow_mod_delete(sw->dpid,
 								pack.get_table_id(),
-								entry,
+								new_entry,
 								of10_translation_utils::get_out_port(pack.get_out_port()),
 								OF1X_GROUP_ANY,
 								strictness)) {

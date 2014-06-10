@@ -57,7 +57,10 @@ public:
 					uint8_t* pkt_buffer,
 					uint32_t buf_len,
 					uint16_t total_len,
-					packet_matches_t* matches)=0;
+					packet_matches_t* matches,
+					rofl::crofctl* controller)=0;
+
+
 	virtual rofl_result_t process_flow_removed(uint8_t reason, of1x_flow_entry_t* removed_flow_entry)=0;
 
 	/**
@@ -77,6 +80,38 @@ public:
 	virtual void rpc_connect_to_ctl(enum rofl::csocket::socket_type_t socket_type, cparams const& socket_params);
 
 	virtual void rpc_disconnect_from_ctl(enum rofl::csocket::socket_type_t socket_type, cparams const& socket_params);
+
+
+	/**
+	 * List of ports belongs to switch
+	 *
+	 * @author Daniel Depaoli <daniel.depaoli (at) create-net.org>
+	 */
+	std::vector<std::string> port_list;
+
+	/**
+	 * Return endpoint
+	 *
+	 * @author Daniel Depaoli <daniel.depaoli (at) create-net.org>
+	 */
+	of_endpoint* getEndpoint() {
+		return endpoint;
+	}
+
+	/**
+	 * Check if switch has port
+	 *
+	 * @author Daniel Depaoli <daniel.depaoli (at) create-net.org>
+	 */
+	bool port_is_present(std::string port);
+
+	/**
+	 * Conversion from num/string to strin/num
+	 *
+	 * @author Daniel Depaoli <daniel.depaoli (at) create-net.org>
+	 */
+	std::string num_to_port(uint64_t num);
+	uint16_t port_to_num(std::string port_name);
 };
 
 }// namespace rofl

@@ -16,6 +16,7 @@ AC_CONFIG_FILES([
 	src/xdpd/management/plugins/config/interfaces/Makefile
 	src/xdpd/management/plugins/config/openflow/Makefile
 	src/xdpd/management/plugins/config/system/Makefile
+	src/xdpd/management/plugins/config/virtualization-agent/Makefile
 ])
 
 

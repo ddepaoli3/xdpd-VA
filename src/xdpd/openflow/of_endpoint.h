@@ -64,6 +64,25 @@ public:
 	virtual rofl_result_t notify_port_status_changed(const switch_port_t* port)=0;
 
 
+	/**
+	 * When adding a slice and connect its controller
+	 * with this function it's possible to store the ctl variable
+	 * without passing in modification of rofl library
+	 *
+	 * TODO[va] better way
+	 *
+	 * @author Daniel Depaoli <daniel.depaoli (at) create-net.org>
+	 */
+	crofctl* return_last_ctl() {
+		crofctl *controller = NULL;
+		for (std::set<crofctl*>::iterator it = ofctl_set.begin(); it != ofctl_set.end(); ++it)
+		{
+			controller = *(it);
+		}
+		return controller;
+	}
+
+
 protected:
 	
 	//Switch to which the endpoint belongs to

@@ -177,7 +177,7 @@ if (virtual_agent::is_active() ) //Otherwise skip all this function
 			std::string _flowspace_dpname = setting[FLOWSPACE_DPNAME][i];
 			flowspace_dpname = _flowspace_dpname;
 
-			if (switch_manager::exists_by_name(flowspace_dpname)  && !dry_run)
+			if (!switch_manager::exists_by_name(flowspace_dpname)  && !dry_run)
 			{
 				ROFL_ERR("[Virtual Agent] %s doesn't exist! Impossible to add the flowspace. Error at line %i\n", flowspace_dpname.c_str(), setting[FLOWSPACE_DPNAME].getSourceLine());
 				throw eConfParseError();
@@ -295,6 +295,7 @@ void xdpd::flowspace_scope::validate_flowspace_registration(
 
 		//Update the match in the list
 		flowspaceStruct->match_list.push_front(match_vlanvid);
+		ROFL_INFO("[%s]Inserisco vlan=%i\n", __FILE__,match_vlanvid->value->value.u16);
 		vlan_present = true;
 	}
 	if (setting.exists(FLOWSPACE_RULE_VLAN_PCP ))

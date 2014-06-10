@@ -44,6 +44,8 @@ public:
 			enum rofl::csocket::socket_type_t socket_type,
 			cparams const& socket_params) throw (eOfSmErrorOnCreation);
 
+	of10_endpoint(openflow_switch* sw) throw (eOfSmErrorOnCreation);
+
 	/**
 	 *
 	 */
@@ -56,7 +58,8 @@ public:
 			uint8_t* pkt_buffer,
 			uint32_t buf_len,
 			uint16_t total_len,
-			packet_matches_t* matches);
+			packet_matches_t* matches,
+			crofctl* controller);
 
 
 	/**

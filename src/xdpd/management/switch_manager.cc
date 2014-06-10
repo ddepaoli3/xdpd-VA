@@ -241,7 +241,7 @@ bool switch_manager::exists_by_name(std::string& name){
 	}
 	
 	pthread_rwlock_unlock(&switch_manager::rwlock);
-
+ROFL_INFO("Esiste %s? %s\n",name.c_str(), (found)?"si":"no");
 	return found; 
 }
 
@@ -410,7 +410,8 @@ rofl_result_t switch_manager::__process_of1x_packet_in(uint64_t dpid,
 				uint8_t* pkt_buffer,
 				uint32_t buf_len,
 				uint16_t total_len,
-				packet_matches_t* matches){
+				packet_matches_t* matches,
+				crofctl* controller){
 	rofl_result_t result;
 	openflow_switch* sw;	
 
@@ -427,8 +428,8 @@ rofl_result_t switch_manager::__process_of1x_packet_in(uint64_t dpid,
 	sw = switch_manager::__get_switch_by_dpid(dpid); 
 
 	if(sw)
-		result = sw->process_packet_in(table_id, reason, in_port, buffer_id, pkt_buffer, buf_len, total_len, matches);
-	else	
+		result = sw->process_packet_in(table_id, reason, in_port, buffer_id, pkt_buffer, buf_len, total_len, matches, controller);
+	else
 		result = ROFL_FAILURE;
 	
 	pthread_rwlock_unlock(&switch_manager::rwlock);
@@ -464,5 +465,63 @@ rofl_result_t switch_manager::__process_of1x_flow_removed(uint64_t dpid,
 	pthread_rwlock_unlock(&switch_manager::rwlock);
 
 	return result;	
+
+
+
+}
+
+openflow_switch* xdpd::switch_manager::create_switch_no_ctl(
+		of_version_t version, uint64_t dpid, const std::string& dpname,
+		unsigned int num_of_tables, int* ma_list) throw (eOfSmExists,
+				eOfSmErrorOnCreation, eOfSmVersionNotSupported) {
+
+	openflow_switch* dp;
+
+	pthread_rwlock_wrlock(&switch_manager::rwlock);
+
+	//
+	if(switch_manager::switchs.find(dpid) != switch_manager::switchs.end()){
+		pthread_rwlock_unlock(&switch_manager::rwlock);
+		throw eOfSmExists();
+	}
+
+	switch(version){
+
+		case OF_VERSION_10:
+			dp = new openflow10_switch(dpid, dpname, num_of_tables, ma_list);
+
+			break;
+
+		case OF_VERSION_12:
+			dp = new openflow12_switch(dpid, dpname, num_of_tables, ma_list);
+
+			break;
+
+		case OF_VERSION_13:
+#if ! defined(EXPERIMENTAL)
+			ROFL_ERR("[xdpd][switch_manager] ERROR: OF1.3 is experimental (i.e. alpha state). Compile xdpd enabling experimental code to test this feature. Don't forget to make clean\n");
+			pthread_rwlock_unlock(&switch_manager::rwlock);
+			throw eOfSmExperimentalNotSupported();
+#endif
+			dp = new openflow13_switch(dpid, dpname, num_of_tables, ma_list);
+
+			break;
+
+		//Add more here...
+
+		default:
+			pthread_rwlock_unlock(&switch_manager::rwlock);
+			throw eOfSmVersionNotSupported();
+
+	}
+
+	//Store in the switch list
+	switch_manager::switchs[dpid] = dp;
+
+	pthread_rwlock_unlock(&switch_manager::rwlock);
+
+	ROFL_INFO("[xdpd][switch_manager] Created switch with no CTL %s with dpid 0x%llx\n", dpname.c_str(), (long long unsigned)dpid);
+
+	return dp;
 
 }

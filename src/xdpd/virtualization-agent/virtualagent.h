@@ -23,6 +23,9 @@
 #define VIRTUALAGENT_H_
 using namespace xdpd;
 
+class eFlowspaceMatch: public rofl::RoflException {};
+class eVirtualAgentGeneric: public rofl::RoflException {};
+
 class virtual_agent {
 
 public:
@@ -92,6 +95,11 @@ public:
 	static uint32_t* change_group_id(uint32_t groupID, uint32_t sliceID);
 	static uint32_t obatin_sliceID(uint32_t groupID);
 	static uint32_t obatin_groupID(uint32_t groupID);
+
+	/**
+	 * Print information for debug
+	 */
+	static void print_debug(uint64_t dpid);
 
 
 private:
